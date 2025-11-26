@@ -14,21 +14,29 @@ export const Button: React.FC<ButtonProps> = ({
   active = false,
   ...props 
 }) => {
-  const baseStyles = "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  // Bubbly base styles: rounded-2xl, transition for 'press' effect
+  const baseStyles = "inline-flex items-center justify-center rounded-2xl font-bold transition-all focus:outline-none focus:ring-4 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform active:translate-y-[2px] active:shadow-none";
   
   const variants = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 shadow-sm",
-    secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-blue-500 shadow-sm",
-    ghost: "bg-transparent text-gray-600 hover:bg-gray-100 focus:ring-gray-400 hover:text-gray-900",
-    icon: "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700 p-2 rounded-full"
+    // Primary: Violet with darker border for 3D effect
+    primary: "bg-violet-500 text-white border-b-4 border-violet-700 hover:bg-violet-400 hover:border-violet-600 focus:ring-violet-300",
+    
+    // Secondary: White with gray border
+    secondary: "bg-white text-slate-700 border-2 border-b-4 border-slate-200 hover:border-slate-300 hover:bg-slate-50 focus:ring-slate-200",
+    
+    // Ghost: No background, just text interaction
+    ghost: "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    
+    // Icon: Simple rounded interaction
+    icon: "bg-white/80 text-slate-500 hover:bg-white hover:text-violet-600 p-2 rounded-full shadow-sm hover:shadow-md transition-all"
   };
 
-  const activeStyles = active ? "bg-blue-50 text-blue-700 border-blue-200" : "";
+  const activeStyles = active ? "bg-violet-100 text-violet-700 border-violet-300" : "";
 
   const sizes = {
-    sm: "px-3 py-1.5 text-xs",
-    md: "px-4 py-2 text-sm",
-    lg: "px-6 py-3 text-base"
+    sm: "px-3 py-1 text-xs border-b-2",
+    md: "px-5 py-2.5 text-sm",
+    lg: "px-8 py-3 text-lg"
   };
 
   const finalClass = `${baseStyles} ${variants[variant]} ${variant !== 'icon' ? sizes[size] : ''} ${activeStyles} ${className}`;

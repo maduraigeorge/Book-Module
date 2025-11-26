@@ -1,24 +1,58 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, X, Music, ExternalLink, ZoomIn, ZoomOut, RotateCcw, Move, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Music, ExternalLink, ZoomIn, ZoomOut, Move, Maximize2, Minimize2, BookOpen, LayoutGrid, RotateCw, PenTool, Eraser, Minimize, MousePointer2, Type, Trash2, Palette } from 'lucide-react';
 import { PageData, Resource, ResourceType } from '../types';
 import { Button } from './Button';
 
 interface DocumentViewerProps {
   pageData: PageData;
+  allPages: PageData[]; // Added for thumbnails
   activeResource: Resource | null;
   currentPage: number;
   totalPages: number;
   onPageChange: (newPage: number) => void;
   onCloseResource: () => void;
+  onToggleFullscreen?: () => void;
 }
+
+interface TextNote {
+  id: string;
+  x: number; // Percentage relative to width
+  y: number; // Percentage relative to height
+  text: string;
+  color: string;
+}
+
+// Helper component for Page Content
+const PageContent = ({ data }: { data: PageData }) => (
+  <div className="w-full h-full bg-white relative overflow-hidden flex flex-col rounded-l-md ring-1 ring-black/5 origin-left select-none">
+      {data.htmlContent ? (
+          // Render Rich HTML Content
+          <div 
+              className="w-full h-full overflow-hidden" 
+              dangerouslySetInnerHTML={{ __html: data.htmlContent }} 
+          />
+      ) : (
+          // Fallback to Image
+          <img 
+              src={data.contentImage} 
+              alt={`Page ${data.pageNumber}`} 
+              className="w-full h-full object-contain pointer-events-none"
+              draggable={false}
+          />
+      )}
+  </div>
+);
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   pageData,
+  allPages,
   activeResource,
   currentPage,
   totalPages,
   onPageChange,
   onCloseResource,
+  onToggleFullscreen,
 }) => {
   // Zoom & Pan State
   const [scale, setScale] = useState(1);
@@ -26,64 +60,217 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // UI State
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showThumbnails, setShowThumbnails] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  
+  // Rotation State (0, 90, 180, 270)
+  const [rotation, setRotation] = useState(0);
+
+  // --- ANNOTATION STATE ---
+  const [interactionMode, setInteractionMode] = useState<'view' | 'draw' | 'type'>('view');
+  const [selectedColor, setSelectedColor] = useState('#ef4444'); // Default Red
+  const [isEraser, setIsEraser] = useState(false);
+  
+  // Text Annotation State
+  const [textNotes, setTextNotes] = useState<TextNote[]>([]);
+  const savedTextNotes = useRef<Map<number, TextNote[]>>(new Map());
+
+  // Canvas State
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const savedDrawings = useRef<Map<number, string>>(new Map()); 
+  
+  // Refs
+  const containerRef = useRef<HTMLDivElement>(null); // For drag events
+  const viewerRootRef = useRef<HTMLDivElement>(null); // For fallback fullscreen
+  const touchStartRef = useRef<{x: number, y: number} | null>(null);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Page Input State
   const [pageInput, setPageInput] = useState(currentPage.toString());
 
-  // Animation State
-  const [displayData, setDisplayData] = useState<PageData>(pageData);
-  const [phantomData, setPhantomData] = useState<PageData | null>(null);
-  const [animDirection, setAnimDirection] = useState<'next' | 'prev' | null>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // --- PERSISTENCE LOGIC ---
 
-  // Handle Page Changes with Animation
-  useEffect(() => {
-    if (pageData.pageNumber !== displayData.pageNumber) {
-        // Reset zoom before animating
-        setScale(1);
-        setPosition({ x: 0, y: 0 });
-        
-        const isNext = pageData.pageNumber > displayData.pageNumber;
-        
-        if (isNext) {
-            // NEXT: Current page (displayData) becomes phantom and flips OUT. New page (pageData) becomes displayData (bottom layer)
-            setPhantomData(displayData); 
-            setDisplayData(pageData);
-            setAnimDirection('next');
-        } else {
-            // PREV: New page (pageData) becomes phantom and flips IN. Current page (displayData) stays as bottom layer?
-            // Actually: Bottom layer should be the "Old" page (displayData), Top layer is "New" page (pageData) arriving?
-            // Let's stick to the visual metaphor:
-            // NEXT: Top sheet (Old) flips Left to reveal Bottom Sheet (New).
-            // PREV: Top sheet (New) flips Right from Left to cover Bottom Sheet (Old).
-            
-            // So for PREV: Bottom is displayData (Old). Top is pageData (New).
-            setPhantomData(pageData);
-            setAnimDirection('prev');
-            // We wait to update displayData until animation finishes?
-            // No, rendering logic below handles stacking.
-        }
-
-        setIsAnimating(true);
-        setPageInput(pageData.pageNumber.toString());
-        
-        const timer = setTimeout(() => {
-            setIsAnimating(false);
-            setPhantomData(null);
-            setAnimDirection(null);
-            setDisplayData(pageData); // Ensure final state matches prop
-        }, 800); // Match CSS animation duration
-
-        return () => clearTimeout(timer);
+  const saveAnnotations = () => {
+    // Save Canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+        const dataUrl = canvas.toDataURL();
+        savedDrawings.current.set(currentPage, dataUrl);
     }
-  }, [pageData, pageData.pageNumber]); // Depend on pageData changes
+    // Save Text
+    savedTextNotes.current.set(currentPage, textNotes);
+  };
+
+  const loadAnnotations = (page: number) => {
+    // Load Canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear existing
+            const savedData = savedDrawings.current.get(page);
+            if (savedData) {
+                const img = new Image();
+                img.src = savedData;
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0);
+                };
+            }
+        }
+    }
+    // Load Text
+    const savedNotes = savedTextNotes.current.get(page);
+    setTextNotes(savedNotes || []);
+  };
+
+  const clearAllDrawings = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            savedDrawings.current.delete(currentPage);
+        }
+    }
+  };
+
+  // Handle Page Changes
+  useEffect(() => {
+    saveAnnotations(); // Save old page data
+    
+    // Standard Reset
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+    setRotation(0);
+    setPageInput(currentPage.toString());
+
+    // Restore new page
+    setTimeout(() => loadAnnotations(currentPage), 0);
+  }, [currentPage]); 
+
+
+  // --- DRAWING HANDLERS ---
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (interactionMode !== 'draw') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.setPointerCapture(e.pointerId);
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = isEraser ? 30 : 4;
+    ctx.strokeStyle = selectedColor;
+    ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+  };
+
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (interactionMode !== 'draw') return;
+    if (e.buttons !== 1) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (canvas) canvas.releasePointerCapture(e.pointerId);
+  };
+
+  // --- TEXT ANNOTATION HANDLERS ---
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      // Logic for adding text
+      if (interactionMode === 'type') {
+          // If we clicked on an existing input, don't create new one (handled by propagation stop)
+          const rect = e.currentTarget.getBoundingClientRect();
+          const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+          const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+          
+          const newNote: TextNote = {
+              id: Date.now().toString(),
+              x: xPercent,
+              y: yPercent,
+              text: '',
+              color: selectedColor
+          };
+          setTextNotes([...textNotes, newNote]);
+          
+          // Switch to view mode temporarily or keep in type mode? Keep in type mode.
+      } else {
+        toggleControls(e);
+      }
+  };
+
+  const updateTextNote = (id: string, newText: string) => {
+      setTextNotes(prev => prev.map(note => note.id === id ? { ...note, text: newText } : note));
+  };
+
+  const deleteTextNote = (id: string) => {
+      setTextNotes(prev => prev.filter(note => note.id !== id));
+  };
+
+
+  // --- CONTROLS VISIBILITY LOGIC ---
+  const resetControlsTimeout = () => {
+      if (!showControls) setShowControls(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      
+      // Auto hide after 3 seconds of inactivity
+      controlsTimeoutRef.current = setTimeout(() => {
+          if (!activeResource) { 
+            setShowControls(false);
+            if (showThumbnails) setShowThumbnails(false);
+          }
+      }, 3000);
+  };
+
+  const toggleControls = (e: React.MouseEvent) => {
+      if (isDragging || interactionMode !== 'view') return; 
+      e.stopPropagation();
+      setShowControls(prev => !prev);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+  };
+
+  useEffect(() => {
+      window.addEventListener('mousemove', resetControlsTimeout);
+      window.addEventListener('touchstart', resetControlsTimeout);
+      resetControlsTimeout(); // init
+
+      return () => {
+          window.removeEventListener('mousemove', resetControlsTimeout);
+          window.removeEventListener('touchstart', resetControlsTimeout);
+          if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      };
+  }, [activeResource, showThumbnails]); 
+
 
   const handlePrev = () => {
-    if (!isAnimating && currentPage > 1) onPageChange(currentPage - 1);
+    if (currentPage > 1) onPageChange(currentPage - 1);
   };
 
   const handleNext = () => {
-    if (!isAnimating && currentPage < totalPages) onPageChange(currentPage + 1);
+    if (currentPage < totalPages) onPageChange(currentPage + 1);
   };
 
   // Zoom Handlers
@@ -96,10 +283,42 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleResetZoom = () => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
+    setRotation(0);
   };
 
-  // Pan Handlers
+  // Rotation Handler
+  const handleRotate = () => {
+    setRotation(r => (r + 90) % 360);
+  };
+
+  // Fullscreen Handler
+  const toggleFullscreen = () => {
+    if (onToggleFullscreen) {
+        onToggleFullscreen();
+    } else {
+        if (!document.fullscreenElement) {
+            viewerRootRef.current?.requestFullscreen().catch(err => {
+                console.error(`Error attempting to enable fullscreen: ${err.message}`);
+            });
+            setIsFullscreen(true);
+        } else {
+            document.exitFullscreen();
+            setIsFullscreen(false);
+        }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+        setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // --- MOUSE Events (Desktop) ---
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (interactionMode !== 'view') return; 
     if (scale > 1) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
@@ -107,6 +326,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (interactionMode !== 'view') return;
     if (isDragging && scale > 1) {
       e.preventDefault();
       setPosition({
@@ -116,18 +336,52 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
+  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseLeave = () => setIsDragging(false);
+
+  // --- TOUCH Events (Mobile) ---
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (interactionMode !== 'view') return;
+    if (e.touches.length === 1) {
+       touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+       if (scale > 1) {
+          setIsDragging(true);
+          setDragStart({ x: e.touches[0].clientX - position.x, y: e.touches[0].clientY - position.y });
+       }
+    }
   };
 
-  const handleMouseLeave = () => {
-    setIsDragging(false);
+  const handleTouchMove = (e: React.TouchEvent) => {
+     if (interactionMode !== 'view') return;
+     if (!touchStartRef.current) return;
+     
+     if (scale > 1 && isDragging) {
+        e.preventDefault(); 
+        setPosition({
+           x: e.touches[0].clientX - dragStart.x,
+           y: e.touches[0].clientY - dragStart.y
+        });
+     }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+     if (interactionMode !== 'view') return;
+     if (scale === 1 && touchStartRef.current && !activeResource) {
+        const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
+        const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
+        
+        if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) {
+           if (deltaX > 0) handlePrev(); 
+           else handleNext(); 
+        }
+     }
+     setIsDragging(false);
+     touchStartRef.current = null;
   };
 
   // Page Input Handlers
   const handlePageInputSubmit = () => {
     let newPage = parseInt(pageInput);
-    
     if (isNaN(newPage)) {
       setPageInput(currentPage.toString());
       return;
@@ -147,57 +401,143 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   };
 
-  // Helper component for Page Content
-  const PageContent = ({ data, shadow = false }: { data: PageData, shadow?: boolean }) => (
-    <div className="w-full h-full bg-white relative overflow-hidden flex flex-col items-center ring-1 ring-black/5 shadow-xl">
-        <img 
-            src={data.contentImage} 
-            alt={`Page ${data.pageNumber}`} 
-            className="w-full h-full object-contain select-none pointer-events-none"
-            draggable={false}
-        />
-        {/* Inner Spine Shadow Gradient */}
-        <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-black/10 to-transparent pointer-events-none mix-blend-multiply"></div>
-        
-        {/* Dynamic Shadow for animation */}
-        {shadow && <div className="absolute inset-0 bg-black/10 animate-shadow pointer-events-none"></div>}
-    </div>
-  );
+  const baseIsLandscape = pageData.layout === 'landscape';
+  const intrinsicAspectRatio = baseIsLandscape ? '297/210' : '210/297';
+  const isRotatedSideways = rotation === 90 || rotation === 270;
 
   return (
-    <div className="flex flex-col h-full bg-slate-800/50 relative overflow-hidden group">
+    <div 
+        ref={viewerRootRef}
+        className="flex flex-col h-full relative overflow-hidden group touch-none bg-pattern-dots"
+    >
       
-      {/* Floating Navigation Arrows */}
-      {!activeResource && !isAnimating && (
+      {/* --- TOP ANNOTATION BAR --- */}
+      <div className={`absolute top-0 left-0 right-0 z-40 flex justify-center p-4 pointer-events-none transition-transform duration-300 ${showControls ? 'translate-y-0' : '-translate-y-20'}`}>
+          <div className="bg-white/95 backdrop-blur shadow-xl border-b-4 border-violet-100 rounded-2xl p-2 flex gap-3 pointer-events-auto items-center">
+              
+              {/* Mode Toggles */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                  <Button 
+                    variant={interactionMode === 'view' ? 'primary' : 'ghost'} 
+                    size="sm" 
+                    onClick={() => {
+                        setInteractionMode('view');
+                        // Optional: clear eraser if it was on
+                        setIsEraser(false);
+                    }}
+                    title="Read Mode"
+                    className="rounded-lg"
+                  >
+                     <MousePointer2 size={20} />
+                  </Button>
+                  <Button 
+                    variant={interactionMode === 'draw' ? 'primary' : 'ghost'} 
+                    size="sm" 
+                    onClick={() => setInteractionMode('draw')}
+                    title="Draw Mode"
+                    className="rounded-lg"
+                  >
+                     <PenTool size={20} />
+                  </Button>
+                  <Button 
+                    variant={interactionMode === 'type' ? 'primary' : 'ghost'} 
+                    size="sm" 
+                    onClick={() => setInteractionMode('type')}
+                    title="Type Mode"
+                    className="rounded-lg"
+                  >
+                     <Type size={20} />
+                  </Button>
+              </div>
+
+              {/* Tools (Visible only if Draw or Type) */}
+              {(interactionMode === 'draw' || interactionMode === 'type') && (
+                 <>
+                    <div className="w-px h-8 bg-slate-200"></div>
+                    
+                    {/* Colors */}
+                    <div className="flex gap-1.5">
+                        {[
+                            { color: '#ef4444', name: 'Red' }, 
+                            { color: '#3b82f6', name: 'Blue' },
+                            { color: '#22c55e', name: 'Green' }, 
+                            { color: '#1e293b', name: 'Black' }
+                        ].map((c) => (
+                            <button
+                                key={c.name}
+                                onClick={() => {
+                                    setSelectedColor(c.color);
+                                    setIsEraser(false);
+                                }}
+                                className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${selectedColor === c.color && !isEraser ? 'ring-2 ring-offset-2 ring-violet-400 scale-110' : 'border-white'} shadow-sm`}
+                                style={{ backgroundColor: c.color }}
+                                title={c.name}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Eraser and Clear (Only for Draw) */}
+                    {interactionMode === 'draw' && (
+                        <>
+                            <Button 
+                                variant={isEraser ? 'primary' : 'icon'}
+                                size="sm"
+                                onClick={() => setIsEraser(!isEraser)}
+                                title="Eraser"
+                                className={isEraser ? 'bg-pink-500 border-pink-700 hover:bg-pink-600' : ''}
+                            >
+                                <Eraser size={18} />
+                            </Button>
+
+                            <Button 
+                                variant="icon"
+                                size="sm"
+                                onClick={clearAllDrawings}
+                                title="Clear All Drawings"
+                                className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                            >
+                                <Trash2 size={18} />
+                            </Button>
+                        </>
+                    )}
+                 </>
+              )}
+          </div>
+      </div>
+
+      {/* Floating Navigation Arrows (Desktop) */}
+      {!activeResource && (
         <>
           <button 
             onClick={handlePrev}
             disabled={currentPage === 1}
             className={`
-              absolute left-4 top-1/2 -translate-y-1/2 z-20 
-              w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white 
-              flex items-center justify-center transition-all duration-200
-              hover:bg-white/20 hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none
-              shadow-lg
+              hidden md:flex
+              absolute left-6 top-1/2 -translate-y-1/2 z-20 
+              w-16 h-16 rounded-full bg-white text-violet-500 border-4 border-violet-100
+              items-center justify-center transition-all duration-200
+              hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none
+              shadow-lg hover:shadow-xl hover:border-violet-200
             `}
             title="Previous Page"
           >
-            <ChevronLeft size={28} />
+            <ChevronLeft size={40} strokeWidth={3} />
           </button>
 
           <button 
             onClick={handleNext}
             disabled={currentPage === totalPages}
             className={`
-              absolute right-4 top-1/2 -translate-y-1/2 z-20 
-              w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white 
-              flex items-center justify-center transition-all duration-200
-              hover:bg-white/20 hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none
-              shadow-lg
+              hidden md:flex
+              absolute right-6 top-1/2 -translate-y-1/2 z-20 
+              w-16 h-16 rounded-full bg-white text-violet-500 border-4 border-violet-100
+              items-center justify-center transition-all duration-200
+              hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none
+              shadow-lg hover:shadow-xl hover:border-violet-200
             `}
             title="Next Page"
           >
-            <ChevronRight size={28} />
+            <ChevronRight size={40} strokeWidth={3} />
           </button>
         </>
       )}
@@ -205,108 +545,136 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       {/* Main Content Area */}
       <div 
         ref={containerRef}
-        className={`flex-1 overflow-hidden relative perspective-container flex items-center justify-center bg-slate-200/50 ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+        className={`flex-1 overflow-hidden relative flex items-center justify-center 
+            ${interactionMode === 'view' && scale > 1 ? 'cursor-grab active:cursor-grabbing' : ''}
+            ${interactionMode === 'type' ? 'cursor-text' : ''}
+            ${showThumbnails ? 'pb-32' : ''} 
+            transition-all duration-300
+        `}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        style={{
-          background: 'radial-gradient(circle, #e2e8f0 0%, #cbd5e1 100%)'
-        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         
         {/* Document Container */}
         <div 
-            className="relative preserve-3d"
+            className="relative transition-all duration-300 ease-out shadow-2xl bg-white select-none"
+            onClick={handleContainerClick}
             style={{
-                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                maxWidth: '90%',
-                maxHeight: '90%',
-                aspectRatio: '1/1.414',
-                width: 'auto',
-                height: 'auto',
-                // Keep the size constrained to viewport
-                minHeight: '60%', 
-                minWidth: '300px'
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+                aspectRatio: intrinsicAspectRatio,
+                ...(isRotatedSideways ? {
+                    width: isFullscreen ? '90vh' : '80vh', 
+                    maxWidth: '1000vh',
+                    height: 'auto', 
+                    maxHeight: isFullscreen ? '95vw' : '90vw'
+                } : {
+                    height: isFullscreen ? '95vh' : '85vh',
+                    width: 'auto',
+                    maxWidth: '95vw'
+                })
             }}
         >
-            {/* 
-               Layering Logic:
-               We need absolute positioning to stack pages.
-            */}
-
-            {/* BASE LAYER (The one that stays or is revealed) */}
-            <div className="absolute inset-0 z-0">
-               {/* 
-                  If going NEXT: Base is NEW page (displayData updated to new). 
-                  If going PREV: Base is OLD page (displayData is NOT updated? Wait, logic says displayData IS old in prev?)
-                  
-                  Let's re-check the logic in useEffect:
-                  Next: phantom=Old, display=New. Phantom is on top animating out. Base is New.
-                  Prev: phantom=New, display=Old. Phantom is on top animating in. Base is Old.
-                  
-                  So Base is always `displayData`.
-               */}
-               <PageContent data={displayData} shadow={isAnimating && animDirection === 'next'} />
+            {/* 1. Page Content */}
+            <div className="absolute inset-0 z-10 bg-white shadow-lg">
+               <PageContent data={pageData} />
             </div>
 
-            {/* ANIMATING LAYER (The one that moves) */}
-            {isAnimating && phantomData && (
-                <div 
-                    className={`
-                        absolute inset-0 z-10 origin-left-edge backface-hidden
-                        ${animDirection === 'next' ? 'animate-turn-out' : ''}
-                        ${animDirection === 'prev' ? 'animate-turn-in' : ''}
-                    `}
-                >
-                    <PageContent data={phantomData} />
-                    {/* Gloss Overlay for realism during turn */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 animate-pulse pointer-events-none"></div>
-                </div>
-            )}
+            {/* 2. Text Annotation Layer */}
+            <div className={`absolute inset-0 z-30 w-full h-full ${interactionMode === 'type' ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+               {textNotes.map((note) => (
+                   <div 
+                       key={note.id}
+                       className="absolute pointer-events-auto group"
+                       style={{ 
+                           left: `${note.x}%`, 
+                           top: `${note.y}%`,
+                           transform: 'translate(-50%, -50%)' // Center on click
+                       }}
+                       onClick={(e) => e.stopPropagation()}
+                   >
+                       <div className="relative">
+                           <textarea
+                               value={note.text}
+                               placeholder="Type..."
+                               onChange={(e) => updateTextNote(note.id, e.target.value)}
+                               className="bg-transparent text-lg font-bold border-2 border-transparent hover:border-violet-300 focus:border-violet-500 focus:bg-white/80 rounded-lg p-2 outline-none resize-none overflow-hidden min-w-[100px]"
+                               style={{ color: note.color, height: 'auto', fieldSizing: 'content' } as any}
+                               autoFocus={!note.text}
+                           />
+                           <button 
+                              onClick={() => deleteTextNote(note.id)}
+                              className="absolute -top-3 -right-3 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                              title="Delete Note"
+                           >
+                               <Trash2 size={12} />
+                           </button>
+                       </div>
+                   </div>
+               ))}
+            </div>
+
+            {/* 3. Canvas Layer */}
+            <canvas
+                ref={canvasRef}
+                width={1000} 
+                height={baseIsLandscape ? 707 : 1414} 
+                className={`
+                    absolute inset-0 z-20 w-full h-full touch-none
+                    ${interactionMode === 'draw' ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none'}
+                `}
+                onPointerDown={startDrawing}
+                onPointerMove={draw}
+                onPointerUp={stopDrawing}
+                onPointerLeave={stopDrawing}
+            />
         </div>
 
         {/* Overlay for Pan Hint */}
-        {scale > 1 && !isDragging && (
-             <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-4 py-2 rounded-full pointer-events-none flex items-center gap-2 backdrop-blur-md animate-pulse shadow-lg z-10">
-                <Move size={12} />
-                Click & Drag to pan
+        {scale > 1 && !isDragging && interactionMode === 'view' && (
+             <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-violet-600 text-white font-bold text-sm px-6 py-2 rounded-full pointer-events-none flex items-center gap-2 shadow-lg z-10 whitespace-nowrap animate-bounce">
+                <Move size={16} />
+                Drag to move around!
              </div>
         )}
 
         {/* Resource Overlay */}
         {activeResource && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 md:p-12 animate-in fade-in zoom-in duration-300 bg-slate-900/80 backdrop-blur-sm cursor-default"
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-0 md:p-12 animate-in fade-in zoom-in duration-300 bg-violet-900/80 backdrop-blur-sm cursor-default"
                onClick={(e) => e.stopPropagation()} 
           >
-             <div className="bg-black w-full max-w-4xl h-auto aspect-video rounded-2xl shadow-2xl overflow-hidden flex flex-col relative ring-1 ring-white/10">
+             <div className="bg-white w-full h-full md:h-auto md:max-w-4xl md:aspect-video md:rounded-3xl shadow-2xl overflow-hidden flex flex-col relative ring-8 ring-white/20">
                 {/* Header */}
-                <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/90 to-transparent p-4 flex justify-between items-start z-10 pointer-events-none">
-                   <div className="text-white drop-shadow-md px-2">
+                <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent p-4 flex justify-between items-start z-10 pointer-events-none">
+                   <div className="text-white drop-shadow-md px-2 pointer-events-auto">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-bold bg-blue-600 px-2 py-0.5 rounded text-white uppercase tracking-wider">
+                        <span className="text-[10px] font-black bg-yellow-400 text-yellow-900 px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
                            {activeResource.type}
                         </span>
                       </div>
-                      <h3 className="font-semibold text-lg leading-tight">
+                      <h3 className="font-bold text-xl leading-tight line-clamp-2">
                         {activeResource.title}
                       </h3>
                    </div>
                    <button 
                     onClick={onCloseResource}
-                    className="pointer-events-auto text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-all backdrop-blur-md"
+                    className="pointer-events-auto text-white bg-white/20 hover:bg-white/40 hover:scale-110 rounded-full p-2 transition-all backdrop-blur-md border-2 border-white/30"
                    >
-                     <X size={20} />
+                     <X size={28} />
                    </button>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 bg-zinc-900 flex items-center justify-center relative">
+                <div className="flex-1 bg-slate-900 flex items-center justify-center relative">
                     {activeResource.type === ResourceType.VIDEO && (
                         <video 
                             controls 
                             autoPlay 
-                            className="w-full h-full"
+                            className="w-full h-full max-h-[80vh]"
                             src={activeResource.url}
                         >
                             Your browser does not support the video tag.
@@ -314,14 +682,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                     )}
 
                     {activeResource.type === ResourceType.AUDIO && (
-                        <div className="flex flex-col items-center justify-center space-y-6 w-full px-12">
+                        <div className="flex flex-col items-center justify-center space-y-6 w-full px-8 bg-pattern-dots bg-violet-50 h-full">
                             <div className="relative">
-                                <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 rounded-full"></div>
-                                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 flex items-center justify-center shadow-2xl relative z-10">
-                                    <Music size={48} className="text-blue-400" />
+                                <div className="absolute inset-0 bg-violet-400 blur-3xl opacity-30 rounded-full animate-pulse"></div>
+                                <div className="w-40 h-40 rounded-full bg-white border-8 border-violet-200 flex items-center justify-center shadow-xl relative z-10">
+                                    <Music size={64} className="text-violet-500" />
                                 </div>
                             </div>
-                            <div className="w-full max-w-md">
+                            <div className="w-full max-w-md bg-white p-4 rounded-2xl shadow-lg border border-violet-100">
+                                <h4 className="text-center font-bold text-violet-900 mb-4">Now Playing</h4>
                                 <audio 
                                     controls 
                                     autoPlay 
@@ -333,21 +702,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                     )}
 
                     {activeResource.type === ResourceType.LINK && (
-                        <div className="text-center text-white p-8">
-                            <div className="w-20 h-20 bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <ExternalLink size={32} className="text-blue-400" />
+                        <div className="text-center text-slate-800 p-8 bg-white h-full flex flex-col items-center justify-center w-full">
+                            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                                <ExternalLink size={40} className="text-green-600" />
                             </div>
-                            <h3 className="text-2xl font-semibold mb-3">External Resource</h3>
-                            <p className="text-slate-400 mb-8 max-w-sm mx-auto">
-                                This content is hosted on an external website. Click below to open it in a new tab.
+                            <h3 className="text-2xl font-black text-slate-800 mb-3">Time to Explore!</h3>
+                            <p className="text-slate-500 mb-8 max-w-sm mx-auto font-medium">
+                                We are taking you to a fun website to learn more!
                             </p>
                             <a 
                                 href={activeResource.url} 
                                 target="_blank" 
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-full text-white font-medium transition-all transform hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-900/20"
+                                className="inline-flex items-center gap-3 px-8 py-4 bg-green-500 hover:bg-green-600 border-b-4 border-green-700 rounded-2xl text-white font-bold text-lg transition-all transform hover:-translate-y-1 hover:shadow-xl"
                             >
-                                Open Resource <ExternalLink size={16} />
+                                Let's Go! <ExternalLink size={20} />
                             </a>
                         </div>
                     )}
@@ -358,62 +727,155 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       </div>
 
       {/* Floating Bottom Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 p-1.5 rounded-2xl bg-slate-900/80 backdrop-blur-xl border border-white/10 shadow-2xl transition-opacity duration-300 hover:bg-slate-900/90">
+      <div 
+        onClick={(e) => e.stopPropagation()} 
+        className={`absolute left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-4 transition-all duration-500 ease-out 
+            ${showControls ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0 pointer-events-none'} 
+            ${showThumbnails ? 'bottom-36' : 'bottom-6'}
+        `}
+      >
+        <div className="flex items-center gap-1 p-2 rounded-2xl bg-white shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-2 border-slate-100 transition-all hover:scale-105 max-w-[95vw] overflow-x-auto no-scrollbar">
+            
+            {/* Show Thumbnails Toggle */}
+             <Button 
+                variant="icon" 
+                size="sm" 
+                onClick={() => setShowThumbnails(!showThumbnails)} 
+                title="Page Preview" 
+                active={showThumbnails}
+                className="mr-1 border-r border-slate-100 rounded-r-none pr-3"
+            >
+                <LayoutGrid size={20} strokeWidth={2.5} />
+            </Button>
+
             {/* Page Navigation Input */}
-            <div className="flex items-center gap-1.5 px-3 mr-1 border-r border-white/10">
-                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider hidden sm:inline">Page</span>
-                <div className="relative group/input">
+            <div className="flex items-center gap-2 px-3 mr-1 border-r-2 border-slate-100 whitespace-nowrap">
+                <BookOpen size={16} className="text-violet-500" />
+                <div className="relative">
                   <input 
-                    className="w-8 bg-transparent text-center text-white font-bold text-sm focus:outline-none focus:bg-white/10 rounded border border-transparent focus:border-blue-500/50 transition-all py-0.5 placeholder-white/30"
+                    className="w-10 bg-slate-100 text-center text-violet-700 font-black text-lg focus:outline-none focus:bg-violet-50 rounded-lg border-2 border-transparent focus:border-violet-300 transition-all py-1"
                     value={pageInput}
                     onChange={(e) => setPageInput(e.target.value)}
                     onKeyDown={handlePageKeyDown}
                     onBlur={handlePageInputSubmit}
-                    title="Enter page number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                   />
                 </div>
-                <span className="text-xs text-slate-500 font-medium">/</span>
-                <span className="text-xs text-slate-400 font-medium">{totalPages}</span>
+                <span className="text-lg text-slate-300 font-bold">/</span>
+                <span className="text-lg text-slate-500 font-bold">{totalPages}</span>
             </div>
 
             <Button 
-                variant="ghost" 
+                variant="icon" 
                 size="sm" 
                 onClick={handleZoomOut} 
-                disabled={scale <= 1} 
+                disabled={scale <= 1 || interactionMode !== 'view'} 
                 title="Zoom Out" 
-                className="h-9 w-9 !p-0 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl"
+                className="hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
             >
-                <ZoomOut size={18} />
+                <ZoomOut size={20} strokeWidth={2.5} />
             </Button>
             
             <div className="px-2 min-w-[50px] text-center flex flex-col items-center justify-center cursor-default select-none">
-                <span className="text-xs font-bold text-white tracking-wider">{Math.round(scale * 100)}%</span>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Zoom</span>
+                <span className="text-sm font-black text-slate-700">{Math.round(scale * 100)}%</span>
             </div>
 
             <Button 
-                variant="ghost" 
+                variant="icon" 
                 size="sm" 
                 onClick={handleZoomIn} 
-                disabled={scale >= 3} 
+                disabled={scale >= 3 || interactionMode !== 'view'} 
                 title="Zoom In" 
-                className="h-9 w-9 !p-0 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl"
+                className="hover:bg-green-50 hover:text-green-500 disabled:opacity-30"
             >
-                <ZoomIn size={18} />
+                <ZoomIn size={20} strokeWidth={2.5} />
             </Button>
             
-            <div className="w-px h-5 bg-white/20 mx-1"></div>
+            <div className="w-0.5 h-6 bg-slate-200 mx-1 rounded-full"></div>
             
             <Button 
-                variant="ghost" 
+                variant="icon" 
                 size="sm" 
                 onClick={handleResetZoom} 
                 title="Fit to Page" 
-                className="h-9 w-9 !p-0 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl"
+                className="hover:bg-blue-50 hover:text-blue-500"
             >
-                {scale === 1 ? <Maximize2 size={18} /> : <RotateCcw size={18} />}
+                <Minimize2 size={20} strokeWidth={2.5} />
             </Button>
+            
+             <div className="w-0.5 h-6 bg-slate-200 mx-1 rounded-full"></div>
+
+             {/* Rotate Button */}
+             <Button
+                variant="icon"
+                size="sm"
+                onClick={handleRotate}
+                title="Rotate Page"
+                className="hover:bg-orange-50 hover:text-orange-500"
+             >
+                 <RotateCw size={20} strokeWidth={2.5} style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s' }} />
+             </Button>
+
+            <div className="w-0.5 h-6 bg-slate-200 mx-1 rounded-full"></div>
+            
+            <Button 
+                variant="icon" 
+                size="sm" 
+                onClick={toggleFullscreen} 
+                title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                className="hover:bg-yellow-50 hover:text-yellow-600"
+            >
+                {isFullscreen ? <Minimize2 size={20} strokeWidth={2.5} /> : <Maximize2 size={20} strokeWidth={2.5} />}
+            </Button>
+        </div>
       </div>
+
+      {/* Thumbnail Peek Preview Strip */}
+      <div 
+        className={`
+            absolute bottom-0 left-0 right-0 h-32 bg-white/95 backdrop-blur-md border-t-4 border-violet-200 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20
+            transform transition-transform duration-300 ease-out flex flex-col
+            ${showThumbnails ? 'translate-y-0' : 'translate-y-full'}
+        `}
+      >
+          <div className="flex-1 overflow-x-auto custom-scrollbar flex items-center px-6 gap-4 py-4">
+              {allPages.map((page) => (
+                  <div 
+                    key={page.pageNumber}
+                    onClick={() => {
+                        onPageChange(page.pageNumber);
+                    }}
+                    className={`
+                        relative flex-shrink-0 cursor-pointer group transition-all duration-200
+                        ${currentPage === page.pageNumber ? 'scale-110 -translate-y-2' : 'hover:-translate-y-1 hover:scale-105'}
+                    `}
+                  >
+                      {/* Page Number Badge */}
+                      <div className={`
+                          absolute -top-3 -right-2 z-10 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-sm
+                          ${currentPage === page.pageNumber ? 'bg-violet-500 text-white' : 'bg-slate-200 text-slate-500 group-hover:bg-violet-200'}
+                      `}>
+                          {page.pageNumber}
+                      </div>
+
+                      {/* Thumbnail Image */}
+                      <div className={`
+                          h-20 w-14 rounded-lg overflow-hidden border-2 shadow-sm
+                          ${currentPage === page.pageNumber ? 'border-violet-500 ring-2 ring-violet-200' : 'border-slate-200 group-hover:border-violet-300'}
+                      `}>
+                         {/* We can use the contentImage as thumbnail */}
+                         <img src={page.contentImage} className="w-full h-full object-cover opacity-80 group-hover:opacity-100" alt="" />
+                      </div>
+                  </div>
+              ))}
+          </div>
+          <div className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-1">
+              Page Preview
+          </div>
+      </div>
+
     </div>
   );
-};
+}

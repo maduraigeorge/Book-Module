@@ -5,87 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart DocuViewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-      body {
-        font-family: 'Inter', sans-serif;
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Nunito', 'sans-serif'],
+            },
+            boxShadow: {
+              'bubbly': '0 4px 0 0 rgba(0, 0, 0, 0.1)',
+              'bubbly-hover': '0 2px 0 0 rgba(0, 0, 0, 0.1)',
+            }
+          }
+        }
       }
-      /* Custom scrollbar for sidebar */
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+      
+      body {
+        font-family: 'Nunito', sans-serif;
+      }
+      
+      /* Fun Background Pattern */
+      .bg-pattern-dots {
+        background-color: #f0f9ff;
+        background-image: radial-gradient(#bae6fd 2px, transparent 2px);
+        background-size: 24px 24px;
+      }
+
+      /* Custom scrollbar for sidebar - Chunky & Round */
       .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
+        width: 12px;
       }
       .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
+        background: #f1f5f9;
+        border-radius: 10px;
+        margin: 4px;
       }
       .custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: #cbd5e1;
         border-radius: 20px;
+        border: 3px solid #f1f5f9;
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background-color: #94a3b8;
-      }
-
-      /* Advanced Flipbook Animations */
-      .perspective-container {
-        perspective: 2500px;
-        overflow: hidden;
-      }
-
-      .preserve-3d {
-        transform-style: preserve-3d;
-      }
-
-      .backface-hidden {
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-      }
-
-      /* Origin is Left Edge for single-page 'book' feel */
-      .origin-left-edge {
-        transform-origin: left center;
-      }
-
-      /* Going NEXT: Old page flips from 0 to -120deg (opens to left) */
-      @keyframes turnPageOut {
-        0% {
-          transform: rotateY(0deg);
-          filter: brightness(100%);
-        }
-        100% {
-          transform: rotateY(-120deg);
-          filter: brightness(80%);
-        }
-      }
-
-      /* Going PREV: New page flips from -120deg (left) to 0 (closed) */
-      @keyframes turnPageIn {
-        0% {
-          transform: rotateY(-120deg);
-          filter: brightness(80%);
-        }
-        100% {
-          transform: rotateY(0deg);
-          filter: brightness(100%);
-        }
-      }
-
-      .animate-turn-out {
-        animation: turnPageOut 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-      }
-
-      .animate-turn-in {
-        animation: turnPageIn 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-      }
-
-      /* Shadow simulation on the page below */
-      @keyframes shadowPulse {
-        0% { opacity: 0; }
-        50% { opacity: 0.4; }
-        100% { opacity: 0; }
-      }
-      
-      .animate-shadow {
-        animation: shadowPulse 0.8s ease-in-out;
       }
       
       /* Hide scrollbar for document container to prevent jitter during zoom */

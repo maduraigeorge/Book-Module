@@ -1,3 +1,4 @@
+
 export enum ResourceType {
   VIDEO = 'video',
   AUDIO = 'audio',
@@ -18,9 +19,11 @@ export interface Resource {
 export interface PageData {
   pageNumber: number;
   title: string;
-  contentImage: string; // URL to an image representing the PDF page
-  textContent: string; // Mock text for accessibility/fallback
+  contentImage: string; // Fallback image
+  htmlContent?: string; // Rich HTML content for the page
+  textContent: string; // Plain text fallback/accessibility
   resources: Resource[];
+  layout?: 'portrait' | 'landscape'; // New property for default orientation
 }
 
 export interface DocumentMetadata {
