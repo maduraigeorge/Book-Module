@@ -1,0 +1,5 @@
+{
+  "name": "Book Viewer",
+  "description": "A immersive document viewer with 3D flipbook page transitions, floating controls, and contextual multimedia resources.",
+  "requestFramePermissions": []
+}
