@@ -3,7 +3,8 @@ export enum ResourceType {
   VIDEO = 'video',
   AUDIO = 'audio',
   LINK = 'link',
-  DOCUMENT = 'document'
+  DOCUMENT = 'document',
+  EMBED = 'embed'
 }
 
 export interface Resource {

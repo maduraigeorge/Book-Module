@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MOCK_PAGES, TOTAL_PAGES } from './constants';
 import { DocumentViewer } from './components/DocumentViewer';
@@ -10,6 +11,9 @@ export default function App() {
   const [activeResource, setActiveResource] = useState<Resource | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   
+  // State to store user-added resources: Map<PageNumber, Resource[]>
+  const [customResources, setCustomResources] = useState<Record<number, Resource[]>>({});
+
   // Ref for the entire app container (Root) so Header stays visible in fullscreen
   const appContainerRef = useRef<HTMLDivElement>(null);
 
@@ -20,10 +24,28 @@ export default function App() {
     }
   }, []);
 
+  // Cleanup Blob URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+        Object.values(customResources).flat().forEach(resource => {
+            if (resource.url.startsWith('blob:')) {
+                URL.revokeObjectURL(resource.url);
+            }
+        });
+    };
+  }, []);
+
   // Get current page data safely
   const currentPageData = useMemo(() => {
     return MOCK_PAGES.find(p => p.pageNumber === currentPage) || MOCK_PAGES[0];
   }, [currentPage]);
+
+  // Combine static resources with custom user resources
+  const currentDisplayResources = useMemo(() => {
+    const staticRes = currentPageData.resources || [];
+    const userRes = customResources[currentPage] || [];
+    return [...staticRes, ...userRes];
+  }, [currentPageData, customResources, currentPage]);
 
   // Effect to handle page changes - if page changes, resource list changes automatically
   useEffect(() => {
@@ -40,6 +62,51 @@ export default function App() {
     } else {
         document.exitFullscreen();
     }
+  };
+
+  const handleAddResource = (newResource: Resource) => {
+    // Ensure ID is unique
+    const uniqueResource = { ...newResource, id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
+    
+    setCustomResources(prev => ({
+        ...prev,
+        [currentPage]: [...(prev[currentPage] || []), uniqueResource]
+    }));
+  };
+
+  const handleDeleteResource = (resourceId: string) => {
+      // If the deleted resource was currently active, close the player
+      if (activeResource?.id === resourceId) {
+          setActiveResource(null);
+      }
+
+      setCustomResources(prev => {
+          const newState = { ...prev };
+          let changed = false;
+
+          // Iterate over all pages in the state to find and delete the resource
+          Object.keys(newState).forEach((key) => {
+              const pageNum = parseInt(key);
+              const resources = newState[pageNum];
+              
+              if (resources) {
+                  const resourceToDelete = resources.find(r => r.id === resourceId);
+                  
+                  if (resourceToDelete) {
+                      // MEMORY CLEANUP: Revoke Blob URL if it exists
+                      if (resourceToDelete.url.startsWith('blob:')) {
+                          URL.revokeObjectURL(resourceToDelete.url);
+                      }
+
+                      const filtered = resources.filter(r => r.id !== resourceId);
+                      newState[pageNum] = filtered;
+                      changed = true;
+                  }
+              }
+          });
+
+          return changed ? newState : prev;
+      });
   };
 
   return (
@@ -152,12 +219,14 @@ export default function App() {
                <div className="w-full h-full border-l-4 border-violet-100 overflow-hidden bg-white"> 
                    <ResourceSidebar 
                         isOpen={true} 
-                        resources={currentPageData.resources}
+                        resources={currentDisplayResources}
                         activeResourceId={activeResource?.id || null}
                         onPlayResource={(r) => {
                             setActiveResource(r);
                             if (window.innerWidth < 768) setIsSidebarOpen(false);
                         }}
+                        onAddResource={handleAddResource}
+                        onDeleteResource={handleDeleteResource}
                         onToggleSidebar={toggleSidebar}
                    />
                </div>

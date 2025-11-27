@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Smart DocuViewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -23,8 +23,12 @@
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
       
-      body {
+      html, body {
+        height: 100%;
+        overflow: hidden; /* Prevent pull-to-refresh */
+        overscroll-behavior: none; /* Prevent rubber banding */
         font-family: 'Nunito', sans-serif;
+        touch-action: none; /* Disable browser handling of gestures */
       }
       
       /* Fun Background Pattern */
