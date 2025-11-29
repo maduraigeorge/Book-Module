@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Trash2, GripVertical, Activity, PlayCircle, Music, FileText, Globe, BoxSelect, EyeOff, Pencil } from 'lucide-react';
+import { Trash2, GripVertical, PlayCircle, Music, FileText, Globe, BoxSelect, EyeOff, Pencil, Zap } from 'lucide-react';
 import { Resource, ResourceType, UserRole } from '../../types';
 
 interface ResourceListProps {
@@ -21,11 +21,11 @@ export const ResourceList: React.FC<ResourceListProps> = ({
 
   const getIcon = (type: ResourceType) => {
     switch(type) {
-      case ResourceType.VIDEO: return <PlayCircle size={20} className="text-pink-500" />;
-      case ResourceType.AUDIO: return <Music size={20} className="text-purple-500" />;
-      case ResourceType.DOCUMENT: return <FileText size={20} className="text-orange-500" />;
-      case ResourceType.LINK: return <Globe size={20} className="text-blue-500" />;
-      default: return <Activity size={20} className="text-green-500" />;
+      case ResourceType.VIDEO: return <PlayCircle size={18} className="text-zinc-600" />;
+      case ResourceType.AUDIO: return <Music size={18} className="text-zinc-600" />;
+      case ResourceType.DOCUMENT: return <FileText size={18} className="text-zinc-600" />;
+      case ResourceType.LINK: return <Globe size={18} className="text-zinc-600" />;
+      default: return <Zap size={18} className="text-zinc-600" />;
     }
   };
 
@@ -45,10 +45,10 @@ export const ResourceList: React.FC<ResourceListProps> = ({
     return userRole === 'teacher' && r.id.startsWith('custom-');
   };
 
-  if (resources.length === 0) return <div className="text-center py-10 text-slate-400"><BoxSelect size={32} className="opacity-50 mx-auto mb-3"/><p className="text-sm font-bold">No resources yet</p></div>;
+  if (resources.length === 0) return <div className="text-center py-12 text-zinc-400"><BoxSelect size={24} className="opacity-50 mx-auto mb-2"/><p className="text-xs font-medium">Empty</p></div>;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+    <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
       {resources.map((res, idx) => (
         <div 
           key={res.id} draggable={isReordering}
@@ -56,39 +56,33 @@ export const ResourceList: React.FC<ResourceListProps> = ({
           onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
           onDrop={(e) => handleDrop(e, idx)}
           onClick={() => !isReordering && onPlay(res)}
-          className={`group relative bg-white border-2 rounded-2xl p-3 transition-all cursor-pointer hover:shadow-md ${activeResourceId === res.id ? 'border-violet-500 shadow-md ring-2 ring-violet-100' : 'border-slate-100'} ${isReordering ? 'cursor-move border-dashed border-slate-300' : ''} ${draggedIdx === idx ? 'opacity-50' : ''} ${res.isHiddenFromStudents ? 'bg-slate-50 border-slate-200' : ''}`}
+          className={`group relative flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${activeResourceId === res.id ? 'bg-zinc-50 border-zinc-300 shadow-sm' : 'bg-white border-zinc-100 hover:border-zinc-200'} ${isReordering ? 'cursor-move border-dashed' : ''} ${draggedIdx === idx ? 'opacity-30' : ''}`}
         >
-          <div className="flex gap-3 items-center">
-            {isReordering && <GripVertical size={20} className="text-slate-300" />}
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${activeResourceId === res.id ? 'bg-violet-100' : 'bg-slate-50'}`}>
-               {res.thumbnail ? <img src={res.thumbnail} className="w-full h-full object-cover rounded-xl" alt=""/> : getIcon(res.type)}
-            </div>
-            <div className="flex-1 min-w-0">
-               <div className="flex items-center gap-2">
-                 <h4 className={`font-bold text-sm truncate ${activeResourceId === res.id ? 'text-violet-700' : 'text-slate-700'}`}>{res.title}</h4>
-                 {res.isHiddenFromStudents && (
-                    <span title="Hidden from students" className="bg-slate-200 text-slate-500 rounded p-0.5"><EyeOff size={12}/></span>
-                 )}
-               </div>
-               <div className="flex items-center gap-2 mt-1">
-                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{res.type}</span>
-               </div>
-            </div>
-            {!isReordering && activeResourceId === res.id && <Activity size={16} className="text-violet-500 animate-pulse" />}
+          {isReordering && <GripVertical size={16} className="text-zinc-300" />}
+          
+          <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 bg-zinc-50 border border-zinc-100 overflow-hidden`}>
+             {res.thumbnail ? <img src={res.thumbnail} className="w-full h-full object-cover" alt=""/> : getIcon(res.type)}
           </div>
           
-          {/* Action Buttons */}
+          <div className="flex-1 min-w-0">
+             <div className="flex items-center gap-2">
+               <h4 className={`font-medium text-sm truncate ${activeResourceId === res.id ? 'text-zinc-900' : 'text-zinc-700'}`}>{res.title}</h4>
+               {res.isHiddenFromStudents && (
+                  <EyeOff size={12} className="text-zinc-400" />
+               )}
+             </div>
+             <p className="text-[10px] text-zinc-400 uppercase tracking-wide mt-0.5">{res.type}</p>
+          </div>
+          
           {!isReordering && canEditOrDelete(res) && (
-            <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                <button 
                 onClick={(e) => { e.stopPropagation(); onEdit(res); }}
-                className="bg-white text-blue-400 hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-full shadow-sm border border-slate-100"
-                title="Edit"
+                className="text-zinc-400 hover:text-zinc-900 p-1.5 rounded-md hover:bg-zinc-100"
               ><Pencil size={14} /></button>
               <button 
-                onClick={(e) => { e.stopPropagation(); if(window.confirm("Delete this activity?")) onDelete(res.id); }}
-                className="bg-white text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-full shadow-sm border border-slate-100"
-                title="Delete"
+                onClick={(e) => { e.stopPropagation(); if(window.confirm("Delete?")) onDelete(res.id); }}
+                className="text-zinc-400 hover:text-red-600 p-1.5 rounded-md hover:bg-red-50"
               ><Trash2 size={14} /></button>
             </div>
           )}

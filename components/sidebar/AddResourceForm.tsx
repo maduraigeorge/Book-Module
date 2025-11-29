@@ -33,9 +33,7 @@ export const AddResourceForm: React.FC<AddResourceFormProps> = ({ initialData, o
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
-      // Create temp URL for preview if needed, but for persistence we mostly care about the file object
       setUrl(URL.createObjectURL(file)); 
-      
       if (file.type.startsWith('video')) setType(ResourceType.VIDEO);
       else if (file.type.startsWith('audio')) setType(ResourceType.AUDIO);
       else if (file.type === 'application/pdf') setType(ResourceType.DOCUMENT);
@@ -47,73 +45,64 @@ export const AddResourceForm: React.FC<AddResourceFormProps> = ({ initialData, o
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (title && url) {
-      const newResource = { 
+      onAdd({ 
         id: initialData ? initialData.id : '', 
-        title, 
-        type, 
-        url, // This is either a web URL or a temp blob URL. The App will handle the blob persistence if file is present.
-        description: 'Custom',
-        isHiddenFromStudents: isHidden
-      };
-      
-      onAdd(newResource, selectedFile);
-      
-      // Reset
+        title, type, url, description: 'Custom', isHiddenFromStudents: isHidden
+      }, selectedFile);
       setTitle(''); setUrl(''); setIsHidden(false); setSelectedFile(undefined);
     }
   };
 
   return (
-    <div className="p-4 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] animate-in slide-in-from-bottom-5">
-       <form onSubmit={handleSubmit} className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-         <div className="flex justify-between items-center mb-3">
-           <span className="text-xs font-black text-slate-400 uppercase">{initialData ? 'Edit Item' : 'New Item'}</span>
-           <button type="button" onClick={onCancel} className="text-slate-400 hover:text-red-500"><X size={16}/></button>
+    <div className="p-4 bg-white border-t border-zinc-100 shadow-soft">
+       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+         <div className="flex justify-between items-center">
+           <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{initialData ? 'Edit Resource' : 'New Resource'}</span>
+           <button type="button" onClick={onCancel} className="text-zinc-400 hover:text-zinc-900"><X size={16}/></button>
          </div>
          
          <input 
-           type="text" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} required
-           className="w-full mb-3 px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-200"
+           type="text" placeholder="Resource Title" value={title} onChange={e => setTitle(e.target.value)} required
+           className="w-full px-3 py-2 bg-zinc-50 rounded-md border border-zinc-200 text-sm focus:outline-none focus:bg-white focus:border-zinc-400 transition-colors"
          />
          
-         <div className="flex gap-2 mb-3">
+         <div className="flex bg-zinc-50 p-1 rounded-md border border-zinc-200">
             {['url', 'file'].map(m => (
-                <button key={m} type="button" onClick={() => setMode(m as any)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border capitalize ${mode === m ? 'bg-white border-violet-300 text-violet-600 shadow-sm' : 'border-transparent text-slate-400'}`}>
-                    {m === 'url' ? <LinkIcon size={12} className="inline mr-1"/> : <Upload size={12} className="inline mr-1"/>} {m}
+                <button key={m} type="button" onClick={() => setMode(m as any)} className={`flex-1 py-1 text-xs font-medium rounded capitalize transition-all ${mode === m ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                    {m}
                 </button>
             ))}
          </div>
 
          {mode === 'url' ? (
-           <div className="mb-3">
-             <input type="url" placeholder="https://..." value={url} onChange={e => { setUrl(e.target.value); setType(ResourceType.LINK); }} className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none" />
-             <div className="flex gap-1 overflow-x-auto mt-2 no-scrollbar">
+           <div className="space-y-2">
+             <input type="url" placeholder="https://..." value={url} onChange={e => { setUrl(e.target.value); setType(ResourceType.LINK); }} className="w-full px-3 py-2 bg-zinc-50 rounded-md border border-zinc-200 text-sm focus:outline-none focus:bg-white focus:border-zinc-400" />
+             <div className="flex gap-1 overflow-x-auto no-scrollbar py-1">
                 {[ResourceType.LINK, ResourceType.VIDEO, ResourceType.AUDIO, ResourceType.DOCUMENT, ResourceType.EMBED].map(t => (
-                    <button key={t} type="button" onClick={() => setType(t)} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border ${type === t ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-white text-slate-400'}`}>{t}</button>
+                    <button key={t} type="button" onClick={() => setType(t)} className={`px-2 py-1 rounded text-[10px] font-semibold uppercase border transition-colors ${type === t ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300'}`}>{t}</button>
                 ))}
              </div>
            </div>
          ) : (
-           <div className="mb-3">
+           <div>
              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFile} />
-             <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full py-2 border border-slate-300 bg-white rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2 truncate">
-               <Paperclip size={14} /> {url ? (url.startsWith('blob:') ? 'File Selected' : 'File Ready') : 'Choose File'}
+             <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full py-2 border border-zinc-200 bg-zinc-50 rounded-md text-xs font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center gap-2 truncate">
+               <Paperclip size={14} /> {url ? (url.startsWith('blob:') ? 'Selected' : 'Ready') : 'Choose File'}
              </button>
            </div>
          )}
          
-         <label className="flex items-center gap-2 mb-4 cursor-pointer group select-none">
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isHidden ? 'bg-violet-500 border-violet-500' : 'bg-white border-slate-300 group-hover:border-violet-300'}`}>
-                {isHidden && <EyeOff size={12} className="text-white" />}
-            </div>
-            <input type="checkbox" checked={isHidden} onChange={e => setIsHidden(e.target.checked)} className="hidden" />
-            <span className={`text-xs font-bold ${isHidden ? 'text-violet-600' : 'text-slate-500'}`}>Hide for Students</span>
-         </label>
-
-         <Button type="submit" size="sm" className="w-full rounded-xl gap-2">
-            {initialData ? <Save size={16}/> : <Plus size={16}/>} 
-            {initialData ? 'Save Changes' : 'Add Item'}
-         </Button>
+         <div className="flex items-center justify-between">
+             <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={isHidden} onChange={e => setIsHidden(e.target.checked)} className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500" />
+                <span className="text-xs text-zinc-600">Hide for Students</span>
+             </label>
+             
+             <Button type="submit" size="sm" variant="primary" className="gap-2 px-4">
+                {initialData ? <Save size={14}/> : <Plus size={14}/>} 
+                {initialData ? 'Save' : 'Add'}
+             </Button>
+         </div>
        </form>
     </div>
   );

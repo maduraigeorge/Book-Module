@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { LayoutGrid, ZoomIn, ZoomOut, Minimize2, RotateCw, BookOpen, Maximize2, Highlighter } from 'lucide-react';
+import { LayoutGrid, ZoomIn, ZoomOut, Minimize2, RotateCw, Maximize2, Highlighter } from 'lucide-react';
 import { Button } from '../Button';
 import { PageData } from '../../types';
 
@@ -40,70 +40,63 @@ export const ViewerControls: React.FC<ViewerControlsProps> = ({
   return (
     <div 
       onClick={(e) => e.stopPropagation()} 
-      className={`absolute bottom-0 left-0 right-0 z-30 flex flex-col items-center transition-transform duration-300 ${showBottomBar ? 'translate-y-0' : 'translate-y-full'}`}
+      className={`absolute bottom-6 left-0 right-0 z-30 flex flex-col items-center transition-transform duration-300 ${showBottomBar ? 'translate-y-0' : 'translate-y-32'}`}
     >
-      {/* Toolbar */}
-      <div className="w-full flex justify-center pointer-events-none">
-        <div className={`pointer-events-auto flex items-center gap-1 p-2 rounded-2xl bg-white shadow-xl border-2 border-slate-100 transition-all duration-300 mb-6 max-w-[95vw] overflow-x-auto no-scrollbar ${showThumbnails ? 'mb-40' : 'mb-6'}`}>
+      <div className="flex items-center gap-1 p-1.5 rounded-full bg-zinc-900/90 backdrop-blur text-zinc-400 shadow-2xl mb-4 max-w-[90vw] overflow-x-auto no-scrollbar pointer-events-auto">
           
-          <Button variant="icon" size="sm" onClick={() => setShowThumbnails(!showThumbnails)} active={showThumbnails} className="mr-1 border-r border-slate-100 rounded-r-none pr-3">
-            <LayoutGrid size={20} />
+          <Button variant="ghost" size="icon" onClick={() => setShowThumbnails(!showThumbnails)} active={showThumbnails} className="hover:text-white hover:bg-zinc-800">
+            <LayoutGrid size={18} />
           </Button>
 
-          <div className="flex items-center gap-2 px-3 mr-1 border-r-2 border-slate-100 whitespace-nowrap">
-            <BookOpen size={16} className="text-violet-500" />
+          <div className="h-4 w-px bg-zinc-700 mx-1"></div>
+
+          <div className="flex items-center gap-2 px-2">
             <input 
-              className="w-10 bg-slate-100 text-center text-violet-700 font-bold rounded-lg border-2 border-transparent focus:border-violet-300 outline-none"
+              className="w-8 bg-transparent text-center text-white font-medium text-sm border-b border-zinc-700 focus:border-white outline-none"
               value={pageInputValue}
               onChange={(e) => onPageInput(e.target.value)}
               onKeyDown={handleKeyDown}
               inputMode="numeric"
             />
-            <span className="text-slate-500 font-bold">/ {totalPages}</span>
+            <span className="text-xs text-zinc-500">/ {totalPages}</span>
           </div>
 
-          <Button variant="icon" size="sm" onClick={onZoomOut} disabled={scale <= 1}><ZoomOut size={20} /></Button>
-          <span className="text-xs font-bold text-slate-700 min-w-[40px] text-center">{Math.round(scale * 100)}%</span>
-          <Button variant="icon" size="sm" onClick={onZoomIn} disabled={scale >= 4}><ZoomIn size={20} /></Button>
-          
-          <div className="w-0.5 h-6 bg-slate-200 mx-1"></div>
-          <Button variant="icon" size="sm" onClick={onResetZoom}><Minimize2 size={20} /></Button>
-          <div className="w-0.5 h-6 bg-slate-200 mx-1"></div>
-          
-          <Button variant="icon" size="sm" onClick={onToggleAnnotation} active={isAnnotating} className={isAnnotating ? 'bg-pink-100 text-pink-600' : ''}>
-            <Highlighter size={20} />
-          </Button>
+          <div className="h-4 w-px bg-zinc-700 mx-1"></div>
 
-          <Button variant="icon" size="sm" onClick={onRotate}>
-            <RotateCw size={20} style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s' }} />
+          <Button variant="ghost" size="icon" onClick={onZoomOut} disabled={scale <= 1} className="hover:text-white hover:bg-zinc-800"><ZoomOut size={18} /></Button>
+          <span className="text-[10px] font-medium min-w-[30px] text-center">{Math.round(scale * 100)}%</span>
+          <Button variant="ghost" size="icon" onClick={onZoomIn} disabled={scale >= 4} className="hover:text-white hover:bg-zinc-800"><ZoomIn size={18} /></Button>
+          
+          <div className="h-4 w-px bg-zinc-700 mx-1"></div>
+          
+          <Button variant="ghost" size="icon" onClick={onResetZoom} className="hover:text-white hover:bg-zinc-800"><Minimize2 size={18} /></Button>
+          <Button variant="ghost" size="icon" onClick={onToggleAnnotation} active={isAnnotating} className={isAnnotating ? 'text-white bg-zinc-700' : 'hover:text-white hover:bg-zinc-800'}>
+            <Highlighter size={18} />
           </Button>
-
-          <div className="w-0.5 h-6 bg-slate-200 mx-1"></div>
-          <Button variant="icon" size="sm" onClick={onToggleFullscreen}>
-            {isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+          <Button variant="ghost" size="icon" onClick={onRotate} className="hover:text-white hover:bg-zinc-800">
+            <RotateCw size={18} style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s' }} />
           </Button>
-        </div>
+          <Button variant="ghost" size="icon" onClick={onToggleFullscreen} className="hover:text-white hover:bg-zinc-800">
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </Button>
       </div>
 
-      {/* Thumbnails */}
-      <div className={`absolute bottom-0 left-0 right-0 h-32 bg-white/95 backdrop-blur-md border-t-4 border-violet-200 shadow-xl z-20 transition-transform duration-300 flex flex-col pointer-events-auto ${showThumbnails ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="flex-1 overflow-x-auto custom-scrollbar flex items-center px-6 gap-4 py-4">
-          {allPages.map((page) => (
-            <div 
-              key={page.pageNumber} 
-              onClick={() => onPageChange(page.pageNumber)}
-              className={`relative flex-shrink-0 cursor-pointer transition-all duration-200 ${currentPage === page.pageNumber ? 'scale-110 -translate-y-2' : 'hover:-translate-y-1'}`}
-            >
-              <div className={`absolute -top-3 -right-2 z-10 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-sm ${currentPage === page.pageNumber ? 'bg-violet-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                {page.pageNumber}
+      {showThumbnails && (
+        <div className="absolute bottom-16 w-full max-w-3xl bg-white/95 backdrop-blur-md rounded-xl border border-zinc-200 shadow-xl z-20 p-2 animate-in slide-in-from-bottom-5">
+          <div className="flex overflow-x-auto custom-scrollbar gap-2 p-2">
+            {allPages.map((page) => (
+              <div 
+                key={page.pageNumber} 
+                onClick={() => onPageChange(page.pageNumber)}
+                className={`flex-shrink-0 cursor-pointer transition-all ${currentPage === page.pageNumber ? 'ring-2 ring-zinc-900 rounded-lg' : 'opacity-70 hover:opacity-100'}`}
+              >
+                <img src={page.contentImage} className="h-20 w-auto rounded-md object-cover border border-zinc-200" alt="" />
+                <div className="text-[10px] text-center mt-1 text-zinc-500 font-medium">{page.pageNumber}</div>
               </div>
-              <div className={`h-20 w-14 rounded-lg overflow-hidden border-2 shadow-sm ${currentPage === page.pageNumber ? 'border-violet-500 ring-2 ring-violet-200' : 'border-slate-200'}`}>
-                <img src={page.contentImage} className="w-full h-full object-cover" alt="" />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
