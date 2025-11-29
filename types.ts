@@ -7,6 +7,10 @@ export enum ResourceType {
   EMBED = 'embed'
 }
 
+export type UserRole = 'student' | 'teacher' | 'admin';
+
+export type BookCategory = 'Studio' | 'Companion' | 'FHB';
+
 export interface Resource {
   id: string;
   title: string;
@@ -15,6 +19,7 @@ export interface Resource {
   url: string; // For video/audio/image source
   duration?: string;
   thumbnail?: string;
+  isHiddenFromStudents?: boolean;
 }
 
 export interface PageData {
